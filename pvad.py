@@ -8,6 +8,10 @@ Analyzes Coinbase trading pairs in real-time using:
 - Trend initiation signals
 
 Identifies statistically significant anomalies in market liquidity and price action.
+
+Usage:
+    python pvad.py           # Run with live Coinbase data
+    python pvad.py --demo    # Run demo mode with simulated data
 """
 
 import sys
@@ -19,6 +23,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import json
 from collections import defaultdict, deque
+import random
+import argparse
 
 try:
     from colorama import init, Fore, Style
@@ -33,13 +39,64 @@ import config
 class CoinbaseAPI:
     """Handles communication with Coinbase Exchange API"""
     
-    def __init__(self):
+    def __init__(self, demo_mode=False):
         self.base_url = config.COINBASE_API_BASE
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'PulseVolume-Anomaly-Detector/1.0'
         })
         self.last_request_time = 0
+        self.demo_mode = demo_mode
+        self.demo_products = [
+            'BTC-USD', 'ETH-USD', 'SOL-USD', 'ADA-USD', 
+            'DOGE-USD', 'XRP-USD', 'LINK-USD', 'MATIC-USD'
+        ]
+        self.demo_state = {}
+        self._init_demo_state()
+    
+    def _init_demo_state(self):
+        """Initialize demo state for each product"""
+        if not self.demo_mode:
+            return
+        base_prices = {
+            'BTC-USD': 45000, 'ETH-USD': 2500, 'SOL-USD': 100,
+            'ADA-USD': 0.50, 'DOGE-USD': 0.08, 'XRP-USD': 0.60,
+            'LINK-USD': 15, 'MATIC-USD': 0.80
+        }
+        for product in self.demo_products:
+            self.demo_state[product] = {
+                'price': base_prices.get(product, 100),
+                'volume': random.uniform(800, 1200),
+                'trend': random.choice(['normal', 'building', 'breaking']),
+                'phase': 0
+            }
+    
+    def _update_demo_data(self, product_id: str):
+        """Update demo data to simulate market behavior"""
+        state = self.demo_state[product_id]
+        
+        # Randomly change trend
+        if random.random() < 0.05:  # 5% chance to change trend
+            state['trend'] = random.choice(['normal', 'building', 'breaking'])
+            state['phase'] = 0
+        
+        state['phase'] += 1
+        
+        if state['trend'] == 'normal':
+            # Normal market conditions
+            state['price'] *= (1 + random.uniform(-0.005, 0.005))
+            state['volume'] = 1000 + random.uniform(-100, 100)
+            
+        elif state['trend'] == 'building':
+            # Building compression before breakout
+            state['price'] *= (1 + random.uniform(-0.001, 0.001))  # Low volatility
+            state['volume'] = 1000 + random.uniform(-50, 50)
+            
+        elif state['trend'] == 'breaking':
+            # Breakout happening
+            direction = 1 if state['phase'] % 10 < 5 else -1
+            state['price'] *= (1 + direction * random.uniform(0.01, 0.03))  # Strong move
+            state['volume'] = 1000 + random.uniform(1500, 3000)  # Volume spike
         
     def _rate_limit(self):
         """Enforce rate limiting"""
@@ -51,6 +108,10 @@ class CoinbaseAPI:
         
     def get_products(self) -> List[Dict]:
         """Fetch all available trading pairs"""
+        if self.demo_mode:
+            return [{'id': pid, 'status': 'online', 'quote_currency': 'USD'} 
+                    for pid in self.demo_products]
+        
         try:
             self._rate_limit()
             response = self.session.get(
@@ -67,6 +128,14 @@ class CoinbaseAPI:
     
     def get_ticker(self, product_id: str) -> Optional[Dict]:
         """Fetch current ticker data for a product"""
+        if self.demo_mode:
+            self._update_demo_data(product_id)
+            state = self.demo_state[product_id]
+            return {
+                'price': str(state['price']),
+                'volume': str(state['volume'])
+            }
+        
         try:
             self._rate_limit()
             response = self.session.get(
@@ -81,6 +150,15 @@ class CoinbaseAPI:
     
     def get_stats(self, product_id: str) -> Optional[Dict]:
         """Fetch 24hr stats for a product"""
+        if self.demo_mode:
+            state = self.demo_state[product_id]
+            return {
+                'volume': str(state['volume']),
+                'open': str(state['price'] * 0.98),
+                'high': str(state['price'] * 1.02),
+                'low': str(state['price'] * 0.98)
+            }
+        
         try:
             self._rate_limit()
             response = self.session.get(
@@ -208,13 +286,14 @@ class TrendAnalyzer:
 class AnomalyDetector:
     """Main anomaly detection system"""
     
-    def __init__(self):
-        self.api = CoinbaseAPI()
+    def __init__(self, demo_mode=False):
+        self.api = CoinbaseAPI(demo_mode=demo_mode)
         self.volume_analyzer = VolumeAnalyzer()
         self.volatility_analyzer = VolatilityAnalyzer()
         self.trend_analyzer = TrendAnalyzer()
         self.alerts = []
         self.last_alert_time = defaultdict(float)
+        self.demo_mode = demo_mode
         
     def analyze_product(self, product_id: str) -> Optional[Dict]:
         """Analyze a single product for anomalies"""
@@ -327,12 +406,18 @@ class AnomalyDetector:
     def run(self):
         """Main detection loop"""
         print("=" * 70)
-        print("PulseVolume Anomaly Detector (PVAD) - Starting...")
+        if self.demo_mode:
+            print("PulseVolume Anomaly Detector (PVAD) - DEMO MODE")
+        else:
+            print("PulseVolume Anomaly Detector (PVAD) - Starting...")
         print("=" * 70)
         print()
         
         # Fetch products
-        print("Fetching available trading pairs from Coinbase...")
+        if self.demo_mode:
+            print("Using simulated market data for demonstration...")
+        else:
+            print("Fetching available trading pairs from Coinbase...")
         products = self.api.get_products()
         
         if not products:
@@ -341,9 +426,12 @@ class AnomalyDetector:
         
         product_ids = [p['id'] for p in products]
         print(f"Monitoring {len(product_ids)} trading pairs")
+        if self.demo_mode:
+            print("(Demo mode will scan every 10 seconds)")
         print()
         
         iteration = 0
+        update_interval = 10 if self.demo_mode else config.UPDATE_INTERVAL
         
         try:
             while True:
@@ -371,8 +459,8 @@ class AnomalyDetector:
                 else:
                     print(f"\nFound {anomalies_found} anomalies in this scan.")
                 
-                print(f"\nWaiting {config.UPDATE_INTERVAL} seconds until next scan...")
-                time.sleep(config.UPDATE_INTERVAL)
+                print(f"\nWaiting {update_interval} seconds until next scan...")
+                time.sleep(update_interval)
                 
         except KeyboardInterrupt:
             print("\n\nShutting down PVAD...")
@@ -382,14 +470,26 @@ class AnomalyDetector:
 
 def main():
     """Entry point"""
+    parser = argparse.ArgumentParser(
+        description='PulseVolume Anomaly Detector - Real-time Cryptocurrency Momentum Detection'
+    )
+    parser.add_argument(
+        '--demo',
+        action='store_true',
+        help='Run in demo mode with simulated data (no internet required)'
+    )
+    args = parser.parse_args()
+    
     print()
     print("╔════════════════════════════════════════════════════════════════════╗")
     print("║   PulseVolume Anomaly Detector (PVAD)                             ║")
     print("║   Real-time Cryptocurrency Momentum Detection                     ║")
+    if args.demo:
+        print("║   DEMO MODE - Using Simulated Data                                ║")
     print("╚════════════════════════════════════════════════════════════════════╝")
     print()
     
-    detector = AnomalyDetector()
+    detector = AnomalyDetector(demo_mode=args.demo)
     
     try:
         detector.run()

@@ -36,10 +36,16 @@ pip install -r requirements.txt
 
 ### Running the Detector
 
-Simply run the main script:
+Run with live Coinbase data:
 
 ```bash
 python pvad.py
+```
+
+Run in demo mode with simulated data (no internet required):
+
+```bash
+python pvad.py --demo
 ```
 
 The detector will:
