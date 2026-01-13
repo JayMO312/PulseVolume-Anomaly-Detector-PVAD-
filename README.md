@@ -90,11 +90,11 @@ VOLUME_DELTA_THRESHOLD = 2.0  # Standard deviations for volume anomaly
 VOLUME_LOOKBACK_PERIODS = 24  # Historical periods to analyze
 
 # Volatility Detection
-VOLATILITY_THRESHOLD = 0.5    # Compression threshold
+VOLATILITY_THRESHOLD = 0.002    # Compression threshold (std dev of returns)
 VOLATILITY_LOOKBACK_PERIODS = 20
 
 # Trend Detection
-TREND_STRENGTH_THRESHOLD = 1.5  # Minimum strength for trend signal
+TREND_STRENGTH_THRESHOLD = 0.015  # Minimum strength for trend signal
 PRICE_CHANGE_THRESHOLD = 0.02   # 2% minimum price change
 
 # Update Frequency
@@ -109,14 +109,14 @@ UPDATE_INTERVAL = 60  # Seconds between scans
 - Uses 24-period lookback by default
 
 ### 2. Volatility Compression
-- Computes coefficient of variation of price returns
-- Identifies compression when volatility < 0.5 threshold
+- Computes standard deviation of price returns
+- Identifies compression when volatility < 0.002 threshold
 - 20-period rolling window
 
 ### 3. Trend Initiation
 - Combines price momentum with volume trends
 - Weights recent volume against baseline
-- Signals when combined strength exceeds 1.5
+- Signals when combined strength exceeds 0.015
 
 ### 4. Anomaly Scoring
 Composite scoring system:
